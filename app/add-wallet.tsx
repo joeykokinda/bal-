@@ -13,35 +13,48 @@ export default function AddWalletScreen() {
   const router = useRouter();
 
   const validateAndSave = async () => {
+    console.log('[ADD WALLET] User pressed Add Wallet button');
+    console.log('[ADD WALLET] Input address:', address.trim());
+    
     if (!address.trim()) {
+      console.log('[ADD WALLET] Error: Empty address');
       Alert.alert('Error', 'Please enter a wallet address');
       return;
     }
 
     try {
       new PublicKey(address.trim());
+      console.log('[ADD WALLET] Address validation passed');
     } catch (error) {
+      console.log('[ADD WALLET] Error: Invalid Solana address');
       Alert.alert('Invalid Address', 'Please enter a valid Solana wallet address');
       return;
     }
 
     setIsLoading(true);
+    console.log('[ADD WALLET] Loading state: true');
 
     try {
       const existingWallets = await AsyncStorage.getItem(WALLETS_STORAGE_KEY);
       const wallets = existingWallets ? JSON.parse(existingWallets) : [];
+      console.log('[ADD WALLET] Existing wallets:', wallets);
       
       if (wallets.includes(address.trim())) {
+        console.log('[ADD WALLET] Error: Duplicate wallet');
         Alert.alert('Duplicate', 'This wallet has already been added');
         setIsLoading(false);
         return;
       }
 
       wallets.push(address.trim());
+      console.log('[ADD WALLET] Saving wallets to storage:', wallets);
       await AsyncStorage.setItem(WALLETS_STORAGE_KEY, JSON.stringify(wallets));
+      console.log('[ADD WALLET] Wallet saved successfully!');
+      console.log('[ADD WALLET] Navigating back to home screen');
       
       router.back();
     } catch (error) {
+      console.log('[ADD WALLET] Error saving wallet:', error);
       Alert.alert('Error', 'Failed to save wallet address');
       setIsLoading(false);
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert, ActivityIndicator, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { getWalletData, WalletData } from '@/utils/solana';
@@ -15,68 +15,89 @@ export default function HomeScreen() {
   const router = useRouter();
 
   const loadWallets = async () => {
+    console.log('[HOME] Loading wallets from AsyncStorage...');
     try {
       const stored = await AsyncStorage.getItem(WALLETS_STORAGE_KEY);
       const addresses = stored ? JSON.parse(stored) : [];
+      console.log('[HOME] Wallets loaded:', addresses);
+      console.log('[HOME] Total wallets count:', addresses.length);
       setWallets(addresses);
       return addresses;
     } catch (error) {
+      console.log('[HOME] Error loading wallets:', error);
       Alert.alert('Error', 'Failed to load wallets');
       return [];
     }
   };
 
   const fetchAllWalletData = async (addresses: string[]) => {
+    console.log('[HOME] Fetching wallet data for', addresses.length, 'wallets');
+    
     if (addresses.length === 0) {
+      console.log('[HOME] No wallets to fetch');
       setWalletData([]);
       return;
     }
 
     try {
-      const dataPromises = addresses.map(address => 
-        getWalletData(address).catch(error => {
-          console.error(`Error fetching ${address}:`, error);
+      const dataPromises = addresses.map((address, index) => {
+        console.log(`[HOME] Fetching wallet ${index + 1}/${addresses.length}:`, address);
+        return getWalletData(address).catch(error => {
+          console.error(`[HOME] Error fetching ${address}:`, error);
           return null;
-        })
-      );
+        });
+      });
       
       const results = await Promise.all(dataPromises);
       const validData = results.filter((data): data is WalletData => data !== null);
+      console.log('[HOME] Successfully fetched', validData.length, 'wallet data');
+      validData.forEach((data, index) => {
+        console.log(`[HOME] Wallet ${index + 1}: ${data.address} - $${data.totalUSD.toFixed(2)}`);
+      });
       setWalletData(validData);
     } catch (error) {
+      console.log('[HOME] Error in fetchAllWalletData:', error);
       Alert.alert('Error', 'Failed to fetch wallet data');
     }
   };
 
   const loadData = async () => {
+    console.log('[HOME] ===== Loading all data =====');
     setIsLoading(true);
     const addresses = await loadWallets();
     await fetchAllWalletData(addresses);
     setIsLoading(false);
+    console.log('[HOME] ===== Data loading complete =====');
   };
 
   const onRefresh = useCallback(async () => {
+    console.log('[HOME] User pulled to refresh');
     setIsRefreshing(true);
     await fetchAllWalletData(wallets);
     setIsRefreshing(false);
+    console.log('[HOME] Refresh complete');
   }, [wallets]);
 
   const deleteWallet = async (address: string) => {
+    console.log('[HOME] User requested to delete wallet:', address);
     Alert.alert(
       'Remove Wallet',
       `Remove ${truncateAddress(address)}?`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel', onPress: () => console.log('[HOME] Delete cancelled') },
         {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
+            console.log('[HOME] Deleting wallet:', address);
             try {
               const updated = wallets.filter(w => w !== address);
               await AsyncStorage.setItem(WALLETS_STORAGE_KEY, JSON.stringify(updated));
+              console.log('[HOME] Wallet deleted successfully');
               setWallets(updated);
               setWalletData(walletData.filter(w => w.address !== address));
             } catch (error) {
+              console.log('[HOME] Error deleting wallet:', error);
               Alert.alert('Error', 'Failed to remove wallet');
             }
           },
@@ -85,19 +106,13 @@ export default function HomeScreen() {
     );
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = router.subscribe?.(() => {
+  // Load data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[HOME] Screen focused - reloading data');
       loadData();
-    });
-    
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [router]);
+    }, [])
+  );
 
   const totalNetWorth = walletData.reduce((sum, wallet) => sum + wallet.totalUSD, 0);
 
@@ -108,6 +123,10 @@ export default function HomeScreen() {
   const renderWalletCard = ({ item }: { item: WalletData }) => (
     <TouchableOpacity
       style={styles.walletCard}
+      onPress={() => {
+        console.log('[HOME] User tapped on wallet:', item.address);
+        router.push(`/wallet-details?address=${item.address}`);
+      }}
       onLongPress={() => deleteWallet(item.address)}
       activeOpacity={0.7}
     >
@@ -128,7 +147,10 @@ export default function HomeScreen() {
           </View>
         </View>
       </View>
-      <Text style={styles.walletValue}>${item.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+      <View style={styles.walletCardRight}>
+        <Text style={styles.walletValue}>${item.totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+        <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+      </View>
     </TouchableOpacity>
   );
 
@@ -372,6 +394,11 @@ const styles = StyleSheet.create({
   walletStatDivider: {
     fontSize: 13,
     color: '#D1D5DB',
+  },
+  walletCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   walletValue: {
     fontSize: 18,
